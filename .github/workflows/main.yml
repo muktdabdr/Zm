@@ -6,8 +6,8 @@ on:
     branches:
       - main
     paths:
-      - 'index.html'
-      - '.github/workflows/build-apk.yml'
+      - 'Zahrati-Android-Project-FIXED.zip'
+      - '.github/workflows/main.yml'
 
 permissions:
   contents: read
@@ -20,12 +20,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check HTML file
+      - name: Extract Zahrati HTML
         run: |
-          test -f index.html || {
-            echo "ERROR: index.html not found in repository root"
-            exit 1
-          }
+          set -e
+          test -f Zahrati-Android-Project-FIXED.zip
+          mkdir -p source
+          unzip -o Zahrati-Android-Project-FIXED.zip -d source
+          HTML_FILE="$(find source -type f -name index.html -print -quit)"
+          test -n "$HTML_FILE"
+          mkdir -p app/src/main/assets
+          cp "$HTML_FILE" app/src/main/assets/index.html
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -40,10 +44,7 @@ jobs:
 
       - name: Create Android project
         run: |
-          mkdir -p app/src/main/assets
           mkdir -p app/src/main/java/com/muktdabdr/zahrati
-
-          cp index.html app/src/main/assets/index.html
 
           cat > settings.gradle <<'EOF'
           pluginManagement {
@@ -88,8 +89,8 @@ jobs:
                   applicationId 'com.muktdabdr.zahrati'
                   minSdk 23
                   targetSdk 28
-                  versionCode 1
-                  versionName '1.0'
+                  versionCode 2
+                  versionName '1.1'
               }
           }
           EOF
@@ -97,13 +98,10 @@ jobs:
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
-
               <application
                   android:theme="@android:style/Theme.Material.Light.NoActionBar"
                   android:label="زهرتي"
-                  android:usesCleartextTraffic="false"
                   android:hardwareAccelerated="true">
-
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
@@ -127,31 +125,17 @@ jobs:
           import android.webkit.WebViewClient;
 
           public class MainActivity extends Activity {
-              private WebView webView;
-
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-
-                  webView = new WebView(this);
+                  WebView webView = new WebView(this);
                   WebSettings settings = webView.getSettings();
                   settings.setJavaScriptEnabled(true);
                   settings.setDomStorageEnabled(true);
                   settings.setAllowFileAccess(true);
-                  settings.setLoadsImagesAutomatically(true);
-
                   webView.setWebViewClient(new WebViewClient());
                   setContentView(webView);
                   webView.loadUrl("file:///android_asset/index.html");
-              }
-
-              @Override
-              public void onBackPressed() {
-                  if (webView != null && webView.canGoBack()) {
-                      webView.goBack();
-                  } else {
-                      super.onBackPressed();
-                  }
               }
           }
           EOF
@@ -165,3 +149,4 @@ jobs:
           name: Zahrati-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
