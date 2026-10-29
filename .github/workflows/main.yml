@@ -1,13 +1,13 @@
-
-name: Build Zahrati APK
+name: Zahrati APK
 
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
-      - 'Zahrati-Android-Project-FIXED.zip'
+      - 'index.html'
       - '.github/workflows/build-apk.yml'
-      - '.github/workflows/main.yml'
 
 permissions:
   contents: read
@@ -15,15 +15,17 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unpack Zahrati Android project ZIP
+      - name: Check HTML file
         run: |
-          unzip -q Zahrati-Android-Project-FIXED.zip -d source
-          test -f source/settings.gradle
-          test -f source/app/src/main/assets/index.html
+          test -f index.html || {
+            echo "ERROR: index.html not found in repository root"
+            exit 1
+          }
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -36,13 +38,130 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build Zahrati APK
-        run: gradle --no-daemon -p source assembleDebug
+      - name: Create Android project
+        run: |
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/java/com/muktdabdr/zahrati
 
-      - name: Upload Zahrati APK
+          cp index.html app/src/main/assets/index.html
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "Zahrati"
+          include(":app")
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.muktdabdr.zahrati'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.muktdabdr.zahrati'
+                  minSdk 23
+                  targetSdk 28
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <application
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:label="زهرتي"
+                  android:usesCleartextTraffic="false"
+                  android:hardwareAccelerated="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/muktdabdr/zahrati/MainActivity.java <<'EOF'
+          package com.muktdabdr.zahrati;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          import android.webkit.WebSettings;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setAllowFileAccess(true);
+                  settings.setLoadsImagesAutomatically(true);
+
+                  webView.setWebViewClient(new WebViewClient());
+                  setContentView(webView);
+                  webView.loadUrl("file:///android_asset/index.html");
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Zahrati-debug-APK
-          path: source/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
